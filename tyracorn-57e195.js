@@ -7,7 +7,7 @@ let tyracornApp;
 let drivers;
 let appLoadingFutures;  // List<Future<?>>
 let time = 0.0;
-const basePath = "/onnanotame";
+const basePath = ".";
 const assetsDirName = "/assets-53587a";
 const localStoragePrefix = "onnanotame.";
 let mouseDown = false;
