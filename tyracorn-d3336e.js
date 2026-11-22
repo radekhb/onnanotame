@@ -8,7 +8,7 @@ let drivers;
 let appLoadingFutures;  // List<Future<?>>
 let time = 0.0;
 const basePath = ".";
-const assetsDirName = "/assets-53587a";
+const assetsDirName = "/assets-c69530";
 const localStoragePrefix = "onnanotame.";
 let mouseDown = false;
 let mouseLastDragX = 0;
@@ -37492,7 +37492,7 @@ class MenuScreen extends TyracornScreen {
 
   load(drivers, screenManager, properties) {
     let assets = drivers.getDriver("AssetManager");
-    return Dut.list(assets.resolveAsync(Path.of("asset:default.tap")), assets.resolveAsync(Path.of("asset:packages/ui")));
+    return Dut.list(assets.resolveAsync(Path.of("asset:default.tap")), assets.resolveAsync(Path.of("asset:packages/ui")), assets.resolveAsync(Path.of("asset:packages/sfx.tap")), assets.resolveAsync(Path.of("asset:packages/music.tap")));
   }
 
   init(drivers, screenManager, properties) {
@@ -37504,9 +37504,7 @@ class MenuScreen extends TyracornScreen {
       this.appManager = AppManager.create(appSettings, storyManager);
     }
     let assets = drivers.getDriver("AssetManager");
-    let audio = drivers.getDriver("AudioDriver").getMixer();
-    audio.setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicGain());
-    audio.setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxGain());
+    drivers.getDriver("AudioDriver").getMixer().setPosScale(0.1).setVelocityScale(0.1).setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicGain()).setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxGain());
     SlotUis.prepareScaledFonts(drivers);
     this.ui = StretchUi.create(SlotUis.createUiSizeFnc()).setStyler(SlotUis.createDefaultStyler());
     this.ui.addComponent(TitleImageView.create(assets));
@@ -37574,11 +37572,9 @@ class MenuScreen extends TyracornScreen {
 }
 classRegistry.MenuScreen = MenuScreen;
 class AudioBehavior extends Behavior {
-  musicVolume = 10;
-  soundVolume = 100;
   musicPlaybackControl = null;
   musicPlaybackMode = AudioPlaybackMode.PLAY;
-  musicVolumeChangeSpeed = 0;
+  musicGainChangeSpeed = 0;
   constructor(key) {
     super(key);
   }
@@ -37594,56 +37590,39 @@ class AudioBehavior extends Behavior {
     let mpc = this.musicPlaybackControl;
     if (mpc!=null) {
       if (this.musicPlaybackMode.equals(AudioPlaybackMode.FADE_IN)) {
-        let targetVolume = this.musicVolume/100;
-        let volume = mpc.getGain();
-        volume = FMath.min(volume+this.musicVolumeChangeSpeed*dt, targetVolume);
-        mpc.setGain(volume);
-        if (volume==targetVolume) {
+        let gain = FMath.min(mpc.getGain()+this.musicGainChangeSpeed*dt, 1);
+        mpc.setGain(gain);
+        if (gain==1) {
           this.musicPlaybackMode = AudioPlaybackMode.PLAY;
         }
       }
       else if (this.musicPlaybackMode.equals(AudioPlaybackMode.FADE_OUT)) {
-        let volume = mpc.getGain();
-        volume = FMath.max(volume-this.musicVolumeChangeSpeed*dt, 0);
-        if (volume<=0.001) {
+        let gain = FMath.max(mpc.getGain()-this.musicGainChangeSpeed*dt, 0);
+        if (gain<=0.001) {
           mpc.stop();
           this.musicPlaybackControl = null;
         }
         else {
-          mpc.setGain(volume);
-        }
-      }
-      else if (this.musicPlaybackMode.equals(AudioPlaybackMode.PLAY)) {
-        let targetVolume = this.musicVolume/100;
-        let volume = mpc.getGain();
-        if (targetVolume!=volume) {
-          mpc.setGain(targetVolume);
+          mpc.setGain(gain);
         }
       }
     }
-  }
-
-  getMusicVolume() {
-    return this.musicVolume;
-  }
-
-  getSoundVolume() {
-    return this.soundVolume;
   }
 
   isMusicPlaying() {
     return this.musicPlaybackControl!=null;
   }
 
-  playSound(soundId) {
-    if (this.soundVolume>0) {
-      this.world().audio().preparePlayback(AudioPlaybackId.random(), soundId).setGain(this.soundVolume/100).setLoop(false).play();
-    }
+  playSfx(sfxId, pos) {
+    this.world().audio().preparePlayback(AudioPlaybackId.random(), sfxId).setBusId(AudioBusId.SFX).setAbsolute(true).setPos(pos).setLoop(false).play();
     return this;
   }
 
-  playRandomSound(soundIds) {
-    this.playSound(Randoms.pickOne(soundIds));
+  playRandomSfxNonStrict(sfxIds, pos) {
+    if (sfxIds.isEmpty()) {
+      return this;
+    }
+    this.playSfx(Randoms.pickOne(sfxIds), pos);
     return this;
   }
 
@@ -37652,8 +37631,8 @@ class AudioBehavior extends Behavior {
       this.musicPlaybackControl.stop();
       this.musicPlaybackControl = null;
     }
-    this.musicVolumeChangeSpeed = this.musicVolume/fadeInTime;
-    this.musicPlaybackControl = this.world().audio().preparePlayback(AudioPlaybackId.random(), trackId).setGain(0.001).setLoop(true).play();
+    this.musicGainChangeSpeed = 1/fadeInTime;
+    this.musicPlaybackControl = this.world().audio().preparePlayback(AudioPlaybackId.random(), trackId).setBusId(AudioBusId.MUSIC).setGain(0.001).setLoop(true).play();
     this.musicPlaybackMode = AudioPlaybackMode.FADE_IN;
     return this;
   }
@@ -37667,7 +37646,7 @@ class AudioBehavior extends Behavior {
       this.musicPlaybackControl = null;
       return this;
     }
-    this.musicVolumeChangeSpeed = this.musicPlaybackControl.getGain()/fadeOutTime;
+    this.musicGainChangeSpeed = this.musicPlaybackControl.getGain()/fadeOutTime;
     this.musicPlaybackMode = AudioPlaybackMode.FADE_OUT;
     return this;
   }
@@ -37735,6 +37714,67 @@ const AudioPlaybackMode = Object.freeze({
     return Object.values(this).filter(value => typeof value === 'object' && value.symbol);
   }
 });
+class SfxId {
+  mId;
+  constructor() {
+  }
+
+  getClass() {
+    return "SfxId";
+  }
+
+  guardInvariants() {
+  }
+
+  id() {
+    return this.mId;
+  }
+
+  hashCode() {
+    return this.mId.hashCode();
+  }
+
+  equals(obj) {
+    if (obj==null) {
+      return false;
+    }
+    if (!(obj instanceof SfxId)) {
+      return false;
+    }
+    let other = obj;
+    return other.mId.equals(this.mId);
+  }
+
+  toString() {
+  }
+
+  static of(id) {
+    let res = new SfxId();
+    res.mId = id;
+    res.guardInvariants();
+    return res;
+  }
+
+}
+classRegistry.SfxId = SfxId;
+class Sfxs {
+  static HIT_BODY_HEAVY_ID = SfxId.of("sfx-hit-body-heavy");
+  static HIT_BODY_MEDIUM_ID = SfxId.of("sfx-hit-body-medium");
+  static BLOCK_BODY_MEDIUM_ID = SfxId.of("sfx-block-body-medium");
+  static HIT_HEAD_HEAVY_ID = SfxId.of("sfx-hit-head-heavy");
+  static SWOOSH_MEDIUM_ID = SfxId.of("sfx-swoosh-medium");
+  static SWOOSH_HEAVY_ID = SfxId.of("sfx-swoosh-heavy");
+  static LAND_ID = SfxId.of("sfx-land");
+  static VOICE_JUMP_ID = SfxId.of("sfx-voice-jump");
+  static VOICE_ATTACK_LIGHT_ID = SfxId.of("sfx-voice-attack-light");
+  static VOICE_ATTACK_MEDIUM_ID = SfxId.of("sfx-voice-attack-medium");
+  static VOICE_HIT_KO_ID = SfxId.of("sfx-voice-hit-ko");
+  getClass() {
+    return "Sfxs";
+  }
+
+}
+classRegistry.Sfxs = Sfxs;
 class FighterCharacter {
   type;
   name;
@@ -38695,7 +38735,7 @@ class CombatScreen extends TyracornScreen {
   load(drivers, screenManager, properties) {
     let res = new ArrayList();
     let assets = drivers.getDriver("AssetManager");
-    res.addAll(Dut.list(assets.resolveAsync(Path.of("asset:packages/ui")), assets.resolveAsync(Path.of("asset:packages/music.tap")), assets.resolveAsync(Path.of("asset:packages/elements.tap")), assets.resolveAsync(Path.of("asset:packages/characters/human-base.tap")), assets.resolveAsync(Path.of("asset:packages/characters/fighters.tap")), assets.resolveAsync(Path.of("asset:packages/characters/girls.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/skybox.tap")), assets.resolveAsync(Path.of("asset:default.tap")), assets.resolveAsync(Path.of("asset:prefabs.tap")), assets.resolveAsync(Path.of("asset:scenes.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/medieval-village.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/nature.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/sci-fi.tap"))));
+    res.addAll(Dut.list(assets.resolveAsync(Path.of("asset:packages/ui")), assets.resolveAsync(Path.of("asset:packages/sfx.tap")), assets.resolveAsync(Path.of("asset:packages/music.tap")), assets.resolveAsync(Path.of("asset:packages/elements.tap")), assets.resolveAsync(Path.of("asset:packages/characters/human-base.tap")), assets.resolveAsync(Path.of("asset:packages/characters/fighters.tap")), assets.resolveAsync(Path.of("asset:packages/characters/girls.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/skybox.tap")), assets.resolveAsync(Path.of("asset:default.tap")), assets.resolveAsync(Path.of("asset:prefabs.tap")), assets.resolveAsync(Path.of("asset:scenes.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/medieval-village.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/nature.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/sci-fi.tap"))));
     return res;
   }
 
@@ -39726,12 +39766,9 @@ class FighterBaseBehavior extends Behavior {
         if (trigger.equals("landing-dust")) {
           this.createLandingDust();
         }
-        else {
-          let soundIds = this.character.getConfig().getSounds(trigger);
-          if (soundIds.isEmpty()) {
-            continue;
-          }
-          this.audio.playRandomSound(soundIds);
+        else if (trigger.startsWith("sfx")) {
+          let trackIds = this.character.getConfig().getSfxTracks(SfxId.of(trigger));
+          this.audio.playRandomSfxNonStrict(trackIds, this.transform.getPos());
         }
       }
     }
@@ -39971,7 +40008,7 @@ class FighterBaseBehavior extends Behavior {
     else if (state.actionEquals(FighterAction.FLY)) {
       this.animationPlayer.play(MeshAnimationKey.of("jump-fly"), MeshAnimationPlayConfig.PLAY);
       if (this.character.isGrounded()) {
-        this.audio.playRandomSound(this.character.getConfig().getSounds("sfx-land"));
+        this.audio.playRandomSfxNonStrict(this.character.getConfig().getSfxTracks(Sfxs.LAND_ID), this.transform.getPos());
         state.setAction(-this.character.getFallVelocity().y()>config.getLandVelocity()?FighterAction.LAND:FighterAction.IDLE);
         this.createLandingDust();
       }
@@ -40425,7 +40462,7 @@ class FighterConfig {
   turnSpeed = 4*FMath.PI;
   jumpUpImpulse = 100;
   landVelocity = 15;
-  sounds = Dut.map("sfx-hit", Dut.list(AudioTrackId.of("man-hit-1"), AudioTrackId.of("man-hit-2"), AudioTrackId.of("man-hit-3"), AudioTrackId.of("man-hit-4"), AudioTrackId.of("man-hit-5")), "sfx-death", Dut.list(AudioTrackId.of("man-death-1"), AudioTrackId.of("man-death-2"), AudioTrackId.of("man-death-3")), "sfx-attack", Dut.list(AudioTrackId.of("man-attack-1"), AudioTrackId.of("man-attack-2"), AudioTrackId.of("man-attack-3"), AudioTrackId.of("man-attack-4"), AudioTrackId.of("man-attack-5"), AudioTrackId.of("man-attack-6"), AudioTrackId.of("man-attack-7")), "sfx-land", Dut.list(AudioTrackId.of("man-land-1")));
+  sfxTracks = Dut.map(Sfxs.HIT_BODY_HEAVY_ID, Dut.list(AudioTrackId.of("impact-body-hit-heavy-00"), AudioTrackId.of("impact-body-hit-heavy-01"), AudioTrackId.of("impact-body-hit-heavy-02")), Sfxs.HIT_BODY_MEDIUM_ID, Dut.list(AudioTrackId.of("impact-body-hit-medium-00"), AudioTrackId.of("impact-body-hit-medium-01"), AudioTrackId.of("impact-body-hit-medium-02")), Sfxs.BLOCK_BODY_MEDIUM_ID, Dut.list(AudioTrackId.of("impact-clothes-body-block-med-01a"), AudioTrackId.of("impact-clothes-body-block-med-01b"), AudioTrackId.of("impact-clothes-body-block-med-01c"), AudioTrackId.of("impact-clothes-body-block-med-01d")), Sfxs.HIT_HEAD_HEAVY_ID, Dut.list(AudioTrackId.of("impact-head-hit-heavy-crunch-00"), AudioTrackId.of("impact-head-hit-heavy-crunch-01"), AudioTrackId.of("impact-head-hit-heavy-crunch-02")), Sfxs.VOICE_ATTACK_LIGHT_ID, Dut.list(AudioTrackId.of("regular-male-voice-attack-light-00"), AudioTrackId.of("regular-male-voice-attack-light-01"), AudioTrackId.of("regular-male-voice-attack-light-02")), Sfxs.VOICE_ATTACK_MEDIUM_ID, Dut.list(AudioTrackId.of("regular-male-voice-attack-medium-00"), AudioTrackId.of("regular-male-voice-attack-medium-01"), AudioTrackId.of("regular-male-voice-attack-medium-02")), Sfxs.VOICE_HIT_KO_ID, Dut.list(AudioTrackId.of("regular-male-voice-hit-ko-00"), AudioTrackId.of("regular-male-voice-hit-ko-01")), Sfxs.SWOOSH_MEDIUM_ID, Dut.list(AudioTrackId.of("swoosh-medium-00"), AudioTrackId.of("swoosh-medium-01"), AudioTrackId.of("swoosh-medium-02"), AudioTrackId.of("swoosh-medium-02"), AudioTrackId.of("swoosh-medium-04")), Sfxs.SWOOSH_HEAVY_ID, Dut.list(AudioTrackId.of("swoosh-heavy-00"), AudioTrackId.of("swoosh-heavy-01"), AudioTrackId.of("swoosh-heavy-02")), Sfxs.VOICE_JUMP_ID, Dut.list(AudioTrackId.of("man-jump-1"), AudioTrackId.of("man-jump-2"), AudioTrackId.of("man-jump-3"), AudioTrackId.of("man-jump-4")), Sfxs.LAND_ID, Dut.list(AudioTrackId.of("man-land-1")));
   attacks = Dut.immutableList(FighterAttackConfig.create(FighterAttackId.JAB).withType(FighterAttackType.PUNCH).withAnimationKey(MeshAnimationKey.of("fight-jab")).withAnimationStartTime(0.11).withStamina(20).withDamange(Interval2.create(5, 10)).withInpulse(Interval2.create(10, 20)).withSingleHit(true).withHitTime(Interval2.create(0.15, 0.22)).withHitBoxes(Dut.list(ComponentKey.of("hand-left-hitbox"))).withDistance(Interval2.create(0.7, 0.87)).withInputMatcher(FighterAttackInputMatcher.create(FighterMoveCategory.ANY, true, false)), FighterAttackConfig.create(FighterAttackId.CROSS).withType(FighterAttackType.PUNCH).withAnimationKey(MeshAnimationKey.of("fight-cross")).withAnimationStartTime(0.13).withStamina(20).withDamange(Interval2.create(10, 20)).withInpulse(Interval2.create(20, 30)).withSingleHit(true).withHitTime(Interval2.create(0.2, 0.32)).withHitBoxes(Dut.list(ComponentKey.of("hand-right-hitbox"))).withDistance(Interval2.create(0.6, 0.83)).withInputMatcher(FighterAttackInputMatcher.create(FighterMoveCategory.FORWARD, true, false)), FighterAttackConfig.create(FighterAttackId.UPPER).withType(FighterAttackType.PUNCH).withAnimationKey(MeshAnimationKey.of("fight-upper")).withAnimationStartTime(0.10).withStamina(20).withDamange(Interval2.create(15, 25)).withInpulse(Interval2.create(10, 20)).withKnockdownFactor(1).withSingleHit(true).withHitTime(Interval2.create(0.24, 0.45)).withHitBoxes(Dut.list(ComponentKey.of("hand-left-hitbox"))).withDistance(Interval2.create(0.45, 0.65)).withInputMatcher(FighterAttackInputMatcher.create(FighterMoveCategory.DOWN, true, false)), FighterAttackConfig.create(FighterAttackId.KICK).withType(FighterAttackType.KICK).withAnimationKey(MeshAnimationKey.of("fight-kick")).withStamina(40).withDamange(Interval2.create(20, 30)).withInpulse(Interval2.create(40, 60)).withSingleHit(true).withHitTime(Interval2.create(0.27, 0.31)).withHitBoxes(Dut.list(ComponentKey.of("shin-right-hitbox"), ComponentKey.of("foot-right-hitbox"))).withDistance(Interval2.create(0.6, 1)).withInputMatcher(FighterAttackInputMatcher.create(FighterMoveCategory.ANY, false, true)), FighterAttackConfig.create(FighterAttackId.KNEE).withType(FighterAttackType.KICK).withAnimationKey(MeshAnimationKey.of("fight-knee")).withStamina(40).withDamange(Interval2.create(30, 40)).withInpulse(Interval2.create(60, 80)).withKnockdownFactor(1).withSingleHit(true).withHitTime(Interval2.create(0.29, 0.47)).withHitBoxes(Dut.list(ComponentKey.of("shin-right-hitbox"))).withDistance(Interval2.create(0.6, 1)).withInputMatcher(FighterAttackInputMatcher.create(FighterMoveCategory.BACKWARD, false, true)), FighterAttackConfig.create(FighterAttackId.BACKFLIP).withType(FighterAttackType.KICK).withAnimationKey(MeshAnimationKey.of("backflip")).withAnimationStartTime(0.24).withStamina(95).withDamange(Interval2.create(500, 1000)).withInpulse(Interval2.create(20, 50)).withSingleHit(false).withHitTime(Interval2.create(0.35, 0.6)).withHitBoxes(Dut.list(ComponentKey.of("shin-left-hitbox"), ComponentKey.of("shin-right-hitbox"), ComponentKey.of("foot-left-hitbox"), ComponentKey.of("foot-right-hitbox"))).withDistance(Interval2.create(0.6, 1.1)).withInputMatcher(FighterAttackInputMatcher.create(FighterMoveCategory.DOWN, false, true)), FighterAttackConfig.create(FighterAttackId.FIREBALL).withType(FighterAttackType.SPELL).withAnimationKey(MeshAnimationKey.of("spell-simple-shoot")).withStamina(50).withDamange(Interval2.create(15, 25)).withInpulse(Interval2.create(10, 20)).withSingleHit(true).withDistance(Interval2.create(2, 10)).withSpawnPoint(ComponentKey.of("fireball-spawn")).withSpawnTime(0.25).withSpawnVelocity(Vec3.create(0, 0, 8)).withMoveSequence(Dut.list(FighterMoveCategory.BACKWARD, FighterMoveCategory.BACKWARD)).withInputMatcher(FighterAttackInputMatcher.create(FighterMoveCategory.ZERO, true, false)));
   blockDamageRatio = 0.1;
   shakeDamage = 2;
@@ -40561,8 +40598,8 @@ class FighterConfig {
     return this.jumpOverMinSpeed;
   }
 
-  getSounds(category) {
-    return this.sounds.getOrDefault(category, Collections.emptyList());
+  getSfxTracks(sfxId) {
+    return this.sfxTracks.getOrDefault(sfxId, Collections.emptyList());
   }
 
   applyToughnessFactor(toughnessFactor) {
@@ -40581,7 +40618,7 @@ class FighterConfig {
     res.turnSpeed = this.turnSpeed;
     res.jumpUpImpulse = this.jumpUpImpulse;
     res.landVelocity = this.landVelocity;
-    res.sounds = this.sounds;
+    res.sfxTracks = this.sfxTracks;
     res.attacks = this.attacks;
     res.blockDamageRatio = this.blockDamageRatio;
     res.shakeDamage = this.shakeDamage*toughnessFactor;
@@ -41984,8 +42021,16 @@ class CombatGameMasterBehavior extends Behavior {
     }
   }
 
-  playSound(soundId) {
-    this.audio.playSound(soundId);
+  playAnnouncerSfx(trackId) {
+    this.world().audio().preparePlayback(AudioPlaybackId.random(), trackId).setBusId(AudioBusId.SFX).setAbsolute(false).setLoop(false).play();
+    return this;
+  }
+
+  playAnouncerRandomSfxNonStrict(trackIds) {
+    if (trackIds.isEmpty()) {
+      return this;
+    }
+    this.playAnnouncerSfx(Randoms.pickOne(trackIds));
     return this;
   }
 
@@ -42397,19 +42442,17 @@ class CombatGameStatePromoter extends UiComponent {
         if (stateTime<2) {
           if (!this.centerView.getTexture().equals(CombatGameStatePromoter.NUMBER_3_TID)) {
             this.centerView.setTexture(CombatGameStatePromoter.NUMBER_3_TID);
-            this.gameMaster.playSound(AudioTrackId.of("number-3"));
+            this.gameMaster.playAnnouncerSfx(AudioTrackId.of("announcer-ready-00"));
           }
         }
         else if (stateTime<3) {
           if (!this.centerView.getTexture().equals(CombatGameStatePromoter.NUMBER_2_TID)) {
             this.centerView.setTexture(CombatGameStatePromoter.NUMBER_2_TID);
-            this.gameMaster.playSound(AudioTrackId.of("number-2"));
           }
         }
         else {
           if (!this.centerView.getTexture().equals(CombatGameStatePromoter.NUMBER_1_TID)) {
             this.centerView.setTexture(CombatGameStatePromoter.NUMBER_1_TID);
-            this.gameMaster.playSound(AudioTrackId.of("number-1"));
           }
         }
         let ttt = stateTime-FMath.trunc(stateTime);
@@ -42426,7 +42469,7 @@ class CombatGameStatePromoter extends UiComponent {
   return Rect2.create(s.width()/2-h5/2, h2, h5, h5);
 });
           this.centerView.onContainerResize(this.containerSize);
-          this.gameMaster.playSound(AudioTrackId.of("fight"));
+          this.gameMaster.playAnouncerRandomSfxNonStrict(Dut.list(AudioTrackId.of("announcer-fight-00"), AudioTrackId.of("announcer-fight-01")));
         }
         let ttt = stateTime-FMath.trunc(stateTime);
         let max = 0.3*(1-ttt)+0.1*ttt;
@@ -42444,7 +42487,7 @@ class CombatGameStatePromoter extends UiComponent {
   return Rect2.create(s.width()/2-h5/2, h2, h5, h5);
 });
         this.centerView.onContainerResize(this.containerSize);
-        this.gameMaster.playSound(AudioTrackId.of("you-win"));
+        this.gameMaster.playAnouncerRandomSfxNonStrict(Dut.list(AudioTrackId.of("announcer-you-win-00"), AudioTrackId.of("announcer-you-win-01")));
       }
       let ttt = FMath.clamp(stateTime, 0, 1);
       let max = 0.1*(1-ttt)+0.5*ttt;
@@ -42458,7 +42501,7 @@ class CombatGameStatePromoter extends UiComponent {
   return Rect2.create(s.width()/2-h5/2, h2, h5, h5);
 });
         this.centerView.onContainerResize(this.containerSize);
-        this.gameMaster.playSound(AudioTrackId.of("you-lose"));
+        this.gameMaster.playAnouncerRandomSfxNonStrict(Dut.list(AudioTrackId.of("announcer-you-lose-00"), AudioTrackId.of("announcer-you-lose-01")));
       }
       let ttt = FMath.clamp(stateTime, 0, 1);
       let max = 0.1*(1-ttt)+0.5*ttt;
@@ -44406,7 +44449,7 @@ class QuestScreen extends TyracornScreen {
   load(drivers, screenManager, properties) {
     let res = new ArrayList();
     let assets = drivers.getDriver("AssetManager");
-    res.addAll(Dut.list(assets.resolveAsync(Path.of("asset:packages/ui")), assets.resolveAsync(Path.of("asset:packages/music.tap")), assets.resolveAsync(Path.of("asset:packages/elements.tap")), assets.resolveAsync(Path.of("asset:packages/characters/human-base.tap")), assets.resolveAsync(Path.of("asset:packages/characters/fighters.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/skybox.tap")), assets.resolveAsync(Path.of("asset:default.tap")), assets.resolveAsync(Path.of("asset:prefabs.tap")), assets.resolveAsync(Path.of("asset:scenes.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/medieval-village.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/nature.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/sci-fi.tap"))));
+    res.addAll(Dut.list(assets.resolveAsync(Path.of("asset:packages/ui")), assets.resolveAsync(Path.of("asset:packages/sfx.tap")), assets.resolveAsync(Path.of("asset:packages/music.tap")), assets.resolveAsync(Path.of("asset:packages/elements.tap")), assets.resolveAsync(Path.of("asset:packages/characters/human-base.tap")), assets.resolveAsync(Path.of("asset:packages/characters/fighters.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/skybox.tap")), assets.resolveAsync(Path.of("asset:default.tap")), assets.resolveAsync(Path.of("asset:prefabs.tap")), assets.resolveAsync(Path.of("asset:scenes.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/medieval-village.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/nature.tap")), assets.resolveAsync(Path.of("asset:packages/worlds/sci-fi.tap"))));
     return res;
   }
 
