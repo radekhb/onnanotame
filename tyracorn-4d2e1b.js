@@ -8,7 +8,7 @@ let drivers;
 let appLoadingFutures;  // List<Future<?>>
 let time = 0.0;
 const basePath = ".";
-const assetsDirName = "/assets-c69530";
+const assetsDirName = "/assets-2b4f09";
 const localStoragePrefix = "onnanotame.";
 let mouseDown = false;
 let mouseLastDragX = 0;
@@ -37613,16 +37613,16 @@ class AudioBehavior extends Behavior {
     return this.musicPlaybackControl!=null;
   }
 
-  playSfx(sfxId, pos) {
-    this.world().audio().preparePlayback(AudioPlaybackId.random(), sfxId).setBusId(AudioBusId.SFX).setAbsolute(true).setPos(pos).setLoop(false).play();
+  playSfx(sfxId) {
+    this.world().audio().preparePlayback(AudioPlaybackId.random(), sfxId).setBusId(AudioBusId.SFX).setAbsolute(false).setLoop(false).play();
     return this;
   }
 
-  playRandomSfxNonStrict(sfxIds, pos) {
+  playRandomSfxNonStrict(sfxIds) {
     if (sfxIds.isEmpty()) {
       return this;
     }
-    this.playSfx(Randoms.pickOne(sfxIds), pos);
+    this.playSfx(Randoms.pickOne(sfxIds));
     return this;
   }
 
@@ -39700,6 +39700,8 @@ class FighterBaseBehavior extends Behavior {
   attackHiboxVolumes = new HashMap();
   attackHitboxVolumeInterpolations = Dut.immutableList(0.33, 0.66, 1);
   moveCategoryAccumulator = FighterMoveCategroyAccumulator.create(1);
+  hitVoiceSfxTimeout = 0;
+  blockSfxTimeout = 0;
   constructor(key) {
     super(key);
   }
@@ -39761,16 +39763,8 @@ class FighterBaseBehavior extends Behavior {
     this.rigidBody.applyForce(this.transform.getPos(), Vec3.create(-friction*vx, 0, -friction*vz));
     let stepStartTime = this.animationPlayer.getTime();
     let step = this.animationPlayer.move(dt);
-    if (!step.getTriggers().isEmpty()) {
-      for (let trigger of step.getTriggers()) {
-        if (trigger.equals("landing-dust")) {
-          this.createLandingDust();
-        }
-        else if (trigger.startsWith("sfx")) {
-          let trackIds = this.character.getConfig().getSfxTracks(SfxId.of(trigger));
-          this.audio.playRandomSfxNonStrict(trackIds, this.transform.getPos());
-        }
-      }
+    for (let trigger of step.getTriggers()) {
+      this.applyEffect(trigger);
     }
     if (state.actionEquals(FighterAction.ATTACK)) {
       let ac = state.getAttack();
@@ -39851,15 +39845,33 @@ class FighterBaseBehavior extends Behavior {
       if (knockdown&&state.actionNotEquals(FighterAction.BLOCK)) {
         this.animationPlayer.play(MeshAnimationKey.of("lift-air-fall"), MeshAnimationPlayConfig.PLAY.withSpeed(0));
         state.setAction(FighterAction.KNOCKDOWN_AIR);
+        this.playSfx(Sfxs.HIT_BODY_HEAVY_ID);
+        if (state.isHealthDeath()) {
+          this.playSfx(Sfxs.VOICE_HIT_KO_ID);
+        }
       }
       else if (state.actionNotEquals(FighterAction.HIT)&&state.actionNotEquals(FighterAction.BLOCK)&&state.actionNotEquals(FighterAction.KNOCKDOWN_AIR)&&state.actionNotEquals(FighterAction.KNOCKDOWN)&&state.actionNotEquals(FighterAction.KIP_UP)&&hitMsg.getDamage()>config.getShakeDamage()) {
         if (hitMsg.getZones().contains(ColliderZone.HEAD)) {
           this.animationPlayer.play(MeshAnimationKey.of("hit-head"), MeshAnimationPlayConfig.PLAY);
           state.setAction(FighterAction.HIT);
+          this.playSfx(Sfxs.HIT_HEAD_HEAVY_ID);
+          if (state.isHealthDeath()) {
+            this.playSfx(Sfxs.VOICE_HIT_KO_ID);
+          }
         }
         else {
           state.setAction(FighterAction.HIT);
           this.animationPlayer.play(MeshAnimationKey.of("hit-stomach"), MeshAnimationPlayConfig.PLAY);
+          this.playSfx(Sfxs.HIT_BODY_MEDIUM_ID);
+          if (state.isHealthDeath()) {
+            this.playSfx(Sfxs.VOICE_HIT_KO_ID);
+          }
+        }
+      }
+      else if (state.actionEquals(FighterAction.BLOCK)) {
+        this.playSfx(Sfxs.BLOCK_BODY_MEDIUM_ID);
+        if (state.isHealthDeath()) {
+          this.playSfx(Sfxs.VOICE_HIT_KO_ID);
         }
       }
       let shakeMsg = ActorMessage.create(ActorMessageType.CAMERA_SHAKE, CameraShake.create(state.actionEquals(FighterAction.BLOCK)?0.05:0.1, 0.2));
@@ -39884,7 +39896,7 @@ class FighterBaseBehavior extends Behavior {
   handleState(dt, input) {
     let config = this.character.getConfig();
     let state = this.character.getState();
-    if (this.character.isGrounded()&&state.getHealth()<=0&&state.actionNotEquals(FighterAction.DEATH)) {
+    if (this.character.isGrounded()&&state.isHealthDeath()&&state.actionNotEquals(FighterAction.DEATH)) {
       state.setAction(FighterAction.DEATH);
       this.animationPlayer.play(MeshAnimationKey.of(Randoms.nextFloat(0, 1)<0.5?"death-fall-backward":"death-fall-forward"), MeshAnimationPlayConfig.PLAY);
       let collider = this.actor().getComponentByKey("ColliderComponent", ComponentKey.of("body-collider"));
@@ -40008,7 +40020,7 @@ class FighterBaseBehavior extends Behavior {
     else if (state.actionEquals(FighterAction.FLY)) {
       this.animationPlayer.play(MeshAnimationKey.of("jump-fly"), MeshAnimationPlayConfig.PLAY);
       if (this.character.isGrounded()) {
-        this.audio.playRandomSfxNonStrict(this.character.getConfig().getSfxTracks(Sfxs.LAND_ID), this.transform.getPos());
+        this.playSfx(Sfxs.LAND_ID);
         state.setAction(-this.character.getFallVelocity().y()>config.getLandVelocity()?FighterAction.LAND:FighterAction.IDLE);
         this.createLandingDust();
       }
@@ -40163,12 +40175,25 @@ class FighterBaseBehavior extends Behavior {
     return input.getMoveDir().y()<=-0.9;
   }
 
+  applyEffect(effect) {
+    if (effect.equals("landing-dust")) {
+      this.createLandingDust();
+    }
+    else if (effect.startsWith("sfx")) {
+      this.playSfx(SfxId.of(effect));
+    }
+  }
+
   createLandingDust() {
     let numBloodParticles = 20;
     let prefab = this.world().assets().get("ActorPrefab", GameActors.PARTICLE_WHITE_DUST_PREFAB_ID);
     for (let i = 0; i<numBloodParticles; ++i) {
       this.world().constructActor(CreateActorRequest.create(prefab, null, this.rigidBody.getPos(), Quaternion.ZERO_ROT));
     }
+  }
+
+  playSfx(sfxId) {
+    this.audio.playRandomSfxNonStrict(this.character.getConfig().getSfxTracks(sfxId));
   }
 
   toString() {
@@ -41042,6 +41067,10 @@ class FighterState {
   changeHealth(dHealth) {
     this.health = this.health+dHealth;
     return this;
+  }
+
+  isHealthDeath() {
+    return this.health<=0;
   }
 
   getStamina() {
