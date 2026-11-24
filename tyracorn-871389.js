@@ -37504,7 +37504,7 @@ class MenuScreen extends TyracornScreen {
       this.appManager = AppManager.create(appSettings, storyManager);
     }
     let assets = drivers.getDriver("AssetManager");
-    drivers.getDriver("AudioDriver").getMixer().setPosScale(0.1).setVelocityScale(0.1).setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicGain()).setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxGain());
+    drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicGain()).setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxGain());
     SlotUis.prepareScaledFonts(drivers);
     this.ui = StretchUi.create(SlotUis.createUiSizeFnc()).setStyler(SlotUis.createDefaultStyler());
     this.ui.addComponent(TitleImageView.create(assets));
@@ -37545,11 +37545,13 @@ class MenuScreen extends TyracornScreen {
     settingsTab.addComponent(SlotUis.createMenuFormSlider(1).setMin(0).setMax(1).setStep(0.01).setValue(this.appManager.getAppSettings().getSfxGain()).addOnChangeAction((src) => {
   let slider = src;
   this.appManager.getAppSettings().setSfxGain(slider.getValue());
+  drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.SFX, slider.getValue());
 }));
     settingsTab.addComponent(SlotUis.createMenuFormLabel(2, "Music"));
     settingsTab.addComponent(SlotUis.createMenuFormSlider(2).setMin(0).setMax(1).setStep(0.01).setValue(this.appManager.getAppSettings().getMusicGain()).addOnChangeAction((src) => {
   let slider = src;
   this.appManager.getAppSettings().setMusicGain(slider.getValue());
+  drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.MUSIC, slider.getValue());
 }));
     settingsTab.addComponent(SlotUis.createMenuBtn(5, "Back").addOnClickAction((btn) => {
   tabs.setActiveTabIdx(0);
@@ -42471,12 +42473,12 @@ class CombatGameStatePromoter extends UiComponent {
         if (stateTime<2) {
           if (!this.centerView.getTexture().equals(CombatGameStatePromoter.NUMBER_3_TID)) {
             this.centerView.setTexture(CombatGameStatePromoter.NUMBER_3_TID);
-            this.gameMaster.playAnnouncerSfx(AudioTrackId.of("announcer-ready-00"));
           }
         }
         else if (stateTime<3) {
           if (!this.centerView.getTexture().equals(CombatGameStatePromoter.NUMBER_2_TID)) {
             this.centerView.setTexture(CombatGameStatePromoter.NUMBER_2_TID);
+            this.gameMaster.playAnnouncerSfx(AudioTrackId.of("announcer-ready-00"));
           }
         }
         else {
