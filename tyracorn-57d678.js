@@ -8315,6 +8315,13 @@ class WebAudioDriver {
      */
     playOnLoads = new HashMap();
 
+    /**
+     * Audio mixer.
+     * 
+     * @type WebAudioMixer
+     */
+    mixer = WebAudioMixer.create(this);
+
     constructor() {
     }
 
@@ -8418,7 +8425,7 @@ class WebAudioDriver {
      * @return {AudioMixer} mixer provided by system
      */
     getMixer() {
-        return WebAudioMixer.create(this);
+        return this.mixer;
     }
 
     /**
@@ -37504,7 +37511,7 @@ class MenuScreen extends TyracornScreen {
       this.appManager = AppManager.create(appSettings, storyManager);
     }
     let assets = drivers.getDriver("AssetManager");
-    drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicGain()).setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxGain());
+    drivers.getDriver("AudioDriver").getMixer().setMasterGain(0.05).setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicGain()).setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxGain());
     SlotUis.prepareScaledFonts(drivers);
     this.ui = StretchUi.create(SlotUis.createUiSizeFnc()).setStyler(SlotUis.createDefaultStyler());
     this.ui.addComponent(TitleImageView.create(assets));
