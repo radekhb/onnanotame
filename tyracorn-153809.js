@@ -37360,9 +37360,9 @@ class AppManager {
 classRegistry.AppManager = AppManager;
 class ConfigPropertiesAppSettings {
   static SFX_ENABLED_KEY = PropertyKey.of("audio.sfx.enabled");
-  static SFx_GAIN_KEY = PropertyKey.of("audio.sfx.gain");
+  static SFx_VOLUME_KEY = PropertyKey.of("audio.sfx.volume");
   static MUSIC_ENABLED_KEY = PropertyKey.of("audio.music.enabled");
-  static MUSIC_GAIN_KEY = PropertyKey.of("audio.music.gain");
+  static MUSIC_VOLUME_KEY = PropertyKey.of("audio.music.volume");
   properties;
   constructor() {
   }
@@ -37382,12 +37382,12 @@ class ConfigPropertiesAppSettings {
     this.properties.put(ConfigPropertiesAppSettings.SFX_ENABLED_KEY, sfxEnabled);
   }
 
-  getSfxGain() {
-    return this.properties.getFloat(ConfigPropertiesAppSettings.SFx_GAIN_KEY, 1);
+  getSfxVolume() {
+    return this.properties.getFloat(ConfigPropertiesAppSettings.SFx_VOLUME_KEY, 0.8);
   }
 
-  setSfxGain(sfxGain) {
-    this.properties.put(ConfigPropertiesAppSettings.SFx_GAIN_KEY, sfxGain);
+  setSfxVolume(sfxVolume) {
+    this.properties.put(ConfigPropertiesAppSettings.SFx_VOLUME_KEY, sfxVolume);
   }
 
   isMusicEnabled() {
@@ -37398,12 +37398,12 @@ class ConfigPropertiesAppSettings {
     this.properties.put(ConfigPropertiesAppSettings.MUSIC_ENABLED_KEY, musicEnabled);
   }
 
-  getMusicGain() {
-    return this.properties.getFloat(ConfigPropertiesAppSettings.MUSIC_GAIN_KEY, 1);
+  getMusicVolume() {
+    return this.properties.getFloat(ConfigPropertiesAppSettings.MUSIC_VOLUME_KEY, 0.6);
   }
 
-  setMusicGain(musicGain) {
-    this.properties.put(ConfigPropertiesAppSettings.MUSIC_GAIN_KEY, musicGain);
+  setMusicVolume(musicVolume) {
+    this.properties.put(ConfigPropertiesAppSettings.MUSIC_VOLUME_KEY, musicVolume);
   }
 
   static create(properties) {
@@ -37511,7 +37511,7 @@ class MenuScreen extends TyracornScreen {
       this.appManager = AppManager.create(appSettings, storyManager);
     }
     let assets = drivers.getDriver("AssetManager");
-    drivers.getDriver("AudioDriver").getMixer().setMasterGain(0.05).setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicGain()).setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxGain());
+    drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicVolume()*this.appManager.getAppSettings().getMusicVolume()).setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxVolume()*this.appManager.getAppSettings().getSfxVolume());
     SlotUis.prepareScaledFonts(drivers);
     this.ui = StretchUi.create(SlotUis.createUiSizeFnc()).setStyler(SlotUis.createDefaultStyler());
     this.ui.addComponent(TitleImageView.create(assets));
@@ -37549,16 +37549,16 @@ class MenuScreen extends TyracornScreen {
     settingsTab.addComponent(SlotUis.createMenuOverlayPanel(0, 6));
     settingsTab.addComponent(SlotUis.createMenuH1Label(0, "Settings"));
     settingsTab.addComponent(SlotUis.createMenuFormLabel(1, "Sound"));
-    settingsTab.addComponent(SlotUis.createMenuFormSlider(1).setMin(0).setMax(1).setStep(0.01).setValue(this.appManager.getAppSettings().getSfxGain()).addOnChangeAction((src) => {
+    settingsTab.addComponent(SlotUis.createMenuFormSlider(1).setMin(0).setMax(1).setStep(0.01).setValue(this.appManager.getAppSettings().getSfxVolume()).addOnChangeAction((src) => {
   let slider = src;
-  this.appManager.getAppSettings().setSfxGain(slider.getValue());
-  drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.SFX, slider.getValue());
+  this.appManager.getAppSettings().setSfxVolume(slider.getValue());
+  drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.SFX, slider.getValue()*slider.getValue());
 }));
     settingsTab.addComponent(SlotUis.createMenuFormLabel(2, "Music"));
-    settingsTab.addComponent(SlotUis.createMenuFormSlider(2).setMin(0).setMax(1).setStep(0.01).setValue(this.appManager.getAppSettings().getMusicGain()).addOnChangeAction((src) => {
+    settingsTab.addComponent(SlotUis.createMenuFormSlider(2).setMin(0).setMax(1).setStep(0.01).setValue(this.appManager.getAppSettings().getMusicVolume()).addOnChangeAction((src) => {
   let slider = src;
-  this.appManager.getAppSettings().setMusicGain(slider.getValue());
-  drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.MUSIC, slider.getValue());
+  this.appManager.getAppSettings().setMusicVolume(slider.getValue());
+  drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.MUSIC, slider.getValue()*slider.getValue());
 }));
     settingsTab.addComponent(SlotUis.createMenuBtn(5, "Back").addOnClickAction((btn) => {
   tabs.setActiveTabIdx(0);
