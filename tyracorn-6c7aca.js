@@ -1381,6 +1381,23 @@ class Dut {
         return Collections.unmodifiableList(res);
     }
 
+    /**
+     * Creates immutable list from the given list without the element on the specified index.
+     *
+     * @param {ArrayList} items items
+     * @param {Number }idx index to remove, integer
+     * @return {ArrayList} created list
+     */
+    static immutableListMinusItemAt(items, idx) {
+        const res = new ArrayList();
+        for (let i = 0; i < items.size(); ++i) {
+            if (i !== idx) {
+                res.add(items.get(i));
+            }
+        }
+        return Collections.unmodifiableList(res);
+    }
+
     static immutableListPlusItems(collection, plusItems) {
         let res = new ArrayList();
         res.addAll(collection);
@@ -7749,8 +7766,8 @@ class WebAudioPlayback {
      * 0 - prepared
      * 1 - started, but waiting for loading
      * 2 - started
-     * 3 - stopped
-     * 4 - closed
+     * 3 - closed (not usable, but resources might be still wired up)
+     * 4 - finalized (resources are released)
      * 
      * @type Number
      */
@@ -7999,6 +8016,17 @@ class WebAudioPlayback {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Returns whether this playback is closed.
+     * If this playback is closed, then it cannot be used anymore.
+     * Closed playback might be released from the hardware memory, like audio sources, by framework at any timne.
+     *
+     * @return {Boolean} whether this playback is finished
+     */
+    isClosed() {
+        return this.state > 2;
     }
 
     /**
@@ -37591,9 +37619,6 @@ class MenuScreen extends TyracornScreen {
 }
 classRegistry.MenuScreen = MenuScreen;
 class AudioBehavior extends Behavior {
-  static MUSIC_FADE_IN_TIME = 1;
-  static MUSIC_FADE_OUT_TIME = 1;
-  static STAGE_MUSIC_ITEMS = Dut.list(Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-downtown-streets-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-downtown-streets-early-rounds-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-jungle-fire-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-jungle-fire-early-rounds-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-king-of-the-rats-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-king-of-the-rats-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-metropolis-grime-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-metropolis-grime-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-runaway-train-loop-1"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-runaway-train-loop-2"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-the-drunken-master-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-the-drunken-master-loop"), true)));
   audioManager;
   constructor(key) {
     super(key);
@@ -37631,12 +37656,12 @@ class AudioBehavior extends Behavior {
     if (delay>0) {
       this.audioManager.addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.WAIT, delay, Dut.emptyList()));
     }
-    this.audioManager.addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, AudioBehavior.MUSIC_FADE_IN_TIME, Randoms.pickOne(AudioBehavior.STAGE_MUSIC_ITEMS)));
+    this.audioManager.addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, Musics.STAGE_MUSIC_FADE_IN_TIME, Randoms.pickOne(Musics.STAGE_MUSIC_ITEMS)));
     return this;
   }
 
   fadeOutMusic() {
-    this.audioManager.addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_OUT_AND_STOP, AudioBehavior.MUSIC_FADE_OUT_TIME, Dut.emptyList()));
+    this.audioManager.addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_OUT_AND_STOP, Musics.STAGE_MUSIC_FADE_OUT_TIME, Dut.emptyList()));
     return this;
   }
 
@@ -37917,6 +37942,9 @@ classRegistry.MusicTrackItem = MusicTrackItem;
 class Musics {
   static MENU_MUSIC_ITEMS = Dut.list(Dut.list(MusicTrackItem.create(AudioTrackId.of("hip-menus-loop-1"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("hip-menus-loop-2"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("hip-menus-loop-3"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("hip-menus-loop-4"), true)));
   static MENU_MUSIC_FADE_IN_DURATION = 3;
+  static STAGE_MUSIC_FADE_IN_TIME = 1;
+  static STAGE_MUSIC_FADE_OUT_TIME = 1;
+  static STAGE_MUSIC_ITEMS = Dut.list(Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-downtown-streets-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-downtown-streets-early-rounds-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-jungle-fire-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-jungle-fire-early-rounds-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-king-of-the-rats-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-king-of-the-rats-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-metropolis-grime-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-metropolis-grime-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-runaway-train-loop-1"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-runaway-train-loop-2"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-the-drunken-master-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-the-drunken-master-loop"), true)));
   constructor() {
   }
 
