@@ -37616,6 +37616,10 @@ class MenuScreen extends TyracornScreen {
     this.ui.unsubscribe(drivers);
   }
 
+  pause(drivers) {
+    this.appManager.getAudioManager().pause();
+  }
+
 }
 classRegistry.MenuScreen = MenuScreen;
 class AudioBehavior extends Behavior {
@@ -37686,6 +37690,8 @@ class AudioManager {
   musicPlaybackTasks = Dut.emptyList();
   musicTrackItems = Dut.emptyList();
   currentTaskTime = 0;
+  paused = false;
+  resumeItem = null;
   constructor() {
   }
 
@@ -37697,11 +37703,19 @@ class AudioManager {
   }
 
   move(dt) {
+    if (this.paused) {
+      this.paused = false;
+      if (this.resumeItem!=null) {
+        this.musicPlaybackControl = this.mixer.preparePlayback(AudioPlaybackId.random(), this.resumeItem.getTrackId()).setBusId(AudioBusId.MUSIC).setGain(this.musicVolume*this.musicVolume).setLoop(this.resumeItem.isLoop()).play();
+      }
+    }
     if (this.musicPlaybackControl!=null&&this.musicPlaybackControl.isClosed()) {
       this.musicPlaybackControl = null;
+      this.resumeItem = null;
     }
     if (this.musicPlaybackControl==null&&!this.musicTrackItems.isEmpty()) {
       let mti = this.musicTrackItems.get(0);
+      this.resumeItem = mti;
       this.musicTrackItems = Dut.immutableListMinusItemAt(this.musicTrackItems, 0);
       this.musicPlaybackControl = this.mixer.preparePlayback(AudioPlaybackId.random(), mti.getTrackId()).setBusId(AudioBusId.MUSIC).setGain(this.musicVolume*this.musicVolume).setLoop(mti.isLoop()).play();
     }
@@ -37718,6 +37732,7 @@ class AudioManager {
           }
           this.musicVolume = 0;
           this.musicPlaybackControl = this.mixer.preparePlayback(AudioPlaybackId.random(), task.getTracks().get(0).getTrackId()).setBusId(AudioBusId.MUSIC).setGain(this.musicVolume*this.musicVolume).setLoop(task.getTracks().get(0).isLoop()).play();
+          this.resumeItem = task.getTracks().get(0);
           this.musicTrackItems = Dut.immutableListMinusItemAt(task.getTracks(), 0);
         }
         let volumeVel = 1/task.getDuration();
@@ -37776,6 +37791,13 @@ class AudioManager {
     this.musicPlaybackControl = null;
     this.musicPlaybackTasks = Dut.emptyList();
     this.musicTrackItems = Dut.emptyList();
+    return this;
+  }
+
+  pause() {
+    this.mixer.stopAll();
+    this.musicPlaybackControl = null;
+    this.paused = true;
     return this;
   }
 
@@ -39030,6 +39052,7 @@ class CombatScreen extends TyracornScreen {
 
   pause(drivers) {
     this.paused = true;
+    this.appManager.getAudioManager().pause();
   }
 
   leave(drivers) {
@@ -44814,6 +44837,7 @@ class QuestScreen extends TyracornScreen {
 
   pause(drivers) {
     this.paused = true;
+    this.appManager.getAudioManager().pause();
   }
 
   leave(drivers) {
