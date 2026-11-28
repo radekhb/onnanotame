@@ -8,7 +8,7 @@ let drivers;
 let appLoadingFutures;  // List<Future<?>>
 let time = 0.0;
 const basePath = ".";
-const assetsDirName = "/assets-2b4f09";
+const assetsDirName = "/assets-54d835";
 const localStoragePrefix = "onnanotame.";
 let mouseDown = false;
 let mouseLastDragX = 0;
@@ -37326,6 +37326,7 @@ classRegistry.Scene = Scene;
 
 class AppManager {
   appSettings;
+  audioManager;
   storyManager;
   constructor() {
   }
@@ -37341,6 +37342,10 @@ class AppManager {
     return this.appSettings;
   }
 
+  getAudioManager() {
+    return this.audioManager;
+  }
+
   getStoryManager() {
     return this.storyManager;
   }
@@ -37348,9 +37353,10 @@ class AppManager {
   toString() {
   }
 
-  static create(appSettings, storyManager) {
+  static create(appSettings, audioManager, storyManager) {
     let res = new AppManager();
     res.appSettings = appSettings;
+    res.audioManager = audioManager;
     res.storyManager = storyManager;
     res.guardInvariants();
     return res;
@@ -37490,6 +37496,7 @@ class MenuScreen extends TyracornScreen {
 
   move(drivers, screenManager, dt) {
     let gDriver = drivers.getDriver("GraphicsDriver");
+    this.appManager.getAudioManager().move(dt);
     gDriver.clearBuffers(BufferId.COLOR, BufferId.DEPTH);
     let uiRenderer = gDriver.startRenderer("UiRenderer", UiEnvironment.DEFAULT);
     this.ui.move(dt);
@@ -37504,11 +37511,13 @@ class MenuScreen extends TyracornScreen {
 
   init(drivers, screenManager, properties) {
     if (this.appManager==null) {
+      let audioDriver = drivers.getDriver("AudioDriver");
       let storage = drivers.getDriver("LocalDataStorage");
       let storyManager = StoryManager.create(storage);
       let appSettingsProps = LocalDataConfigProperties.create(storage, LocalDataKey.of("settings.properties"));
       let appSettings = ConfigPropertiesAppSettings.create(appSettingsProps);
-      this.appManager = AppManager.create(appSettings, storyManager);
+      let audioManager = AudioManager.create(audioDriver.getMixer());
+      this.appManager = AppManager.create(appSettings, audioManager, storyManager);
     }
     let assets = drivers.getDriver("AssetManager");
     drivers.getDriver("AudioDriver").getMixer().setBusGain(AudioBusId.MUSIC, this.appManager.getAppSettings().getMusicVolume()*this.appManager.getAppSettings().getMusicVolume()).setBusGain(AudioBusId.SFX, this.appManager.getAppSettings().getSfxVolume()*this.appManager.getAppSettings().getSfxVolume());
@@ -37572,6 +37581,7 @@ class MenuScreen extends TyracornScreen {
   tabs.setActiveTabIdx(0);
 }));
     this.ui.subscribe(drivers);
+    this.appManager.getAudioManager().addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, Musics.MENU_MUSIC_FADE_IN_DURATION, Randoms.pickOne(Musics.MENU_MUSIC_ITEMS)));
   }
 
   leave(drivers) {
@@ -37581,9 +37591,10 @@ class MenuScreen extends TyracornScreen {
 }
 classRegistry.MenuScreen = MenuScreen;
 class AudioBehavior extends Behavior {
-  musicPlaybackControl = null;
-  musicPlaybackMode = AudioPlaybackMode.PLAY;
-  musicGainChangeSpeed = 0;
+  static MUSIC_FADE_IN_TIME = 1;
+  static MUSIC_FADE_OUT_TIME = 1;
+  static STAGE_MUSIC_ITEMS = Dut.list(Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-downtown-streets-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-downtown-streets-early-rounds-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-jungle-fire-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-jungle-fire-early-rounds-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-king-of-the-rats-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-king-of-the-rats-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-metropolis-grime-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-metropolis-grime-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-runaway-train-loop-1"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-runaway-train-loop-2"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-the-drunken-master-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-the-drunken-master-loop"), true)));
+  audioManager;
   constructor(key) {
     super(key);
   }
@@ -37596,30 +37607,11 @@ class AudioBehavior extends Behavior {
   }
 
   move(dt, inputs) {
-    let mpc = this.musicPlaybackControl;
-    if (mpc!=null) {
-      if (this.musicPlaybackMode.equals(AudioPlaybackMode.FADE_IN)) {
-        let gain = FMath.min(mpc.getGain()+this.musicGainChangeSpeed*dt, 1);
-        mpc.setGain(gain);
-        if (gain==1) {
-          this.musicPlaybackMode = AudioPlaybackMode.PLAY;
-        }
-      }
-      else if (this.musicPlaybackMode.equals(AudioPlaybackMode.FADE_OUT)) {
-        let gain = FMath.max(mpc.getGain()-this.musicGainChangeSpeed*dt, 0);
-        if (gain<=0.001) {
-          mpc.stop();
-          this.musicPlaybackControl = null;
-        }
-        else {
-          mpc.setGain(gain);
-        }
-      }
-    }
+    this.audioManager.move(dt);
   }
 
   isMusicPlaying() {
-    return this.musicPlaybackControl!=null;
+    return this.audioManager.isMusicPlaying();
   }
 
   playSfx(sfxId) {
@@ -37635,46 +37627,203 @@ class AudioBehavior extends Behavior {
     return this;
   }
 
-  fadeInAndPlayMusic(trackId, fadeInTime) {
-    if (this.musicPlaybackControl!=null) {
-      this.musicPlaybackControl.stop();
-      this.musicPlaybackControl = null;
+  playStageMusic(delay) {
+    if (delay>0) {
+      this.audioManager.addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.WAIT, delay, Dut.emptyList()));
     }
-    this.musicGainChangeSpeed = 1/fadeInTime;
-    this.musicPlaybackControl = this.world().audio().preparePlayback(AudioPlaybackId.random(), trackId).setBusId(AudioBusId.MUSIC).setGain(0.001).setLoop(true).play();
-    this.musicPlaybackMode = AudioPlaybackMode.FADE_IN;
+    this.audioManager.addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, AudioBehavior.MUSIC_FADE_IN_TIME, Randoms.pickOne(AudioBehavior.STAGE_MUSIC_ITEMS)));
     return this;
   }
 
-  fadeOutAndStopMusic(fadeOutTime) {
-    if (this.musicPlaybackControl==null) {
-      return this;
-    }
-    if (fadeOutTime<=0) {
-      this.musicPlaybackControl.stop();
-      this.musicPlaybackControl = null;
-      return this;
-    }
-    this.musicGainChangeSpeed = this.musicPlaybackControl.getGain()/fadeOutTime;
-    this.musicPlaybackMode = AudioPlaybackMode.FADE_OUT;
+  fadeOutMusic() {
+    this.audioManager.addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_OUT_AND_STOP, AudioBehavior.MUSIC_FADE_OUT_TIME, Dut.emptyList()));
     return this;
   }
 
   stopAll() {
-    this.world().audio().stopAll();
-    this.musicPlaybackControl = null;
+    this.audioManager.stopAll();
     return this;
   }
 
-  static create(key) {
+  static create(key, audioManager) {
     let res = new AudioBehavior(key);
+    res.audioManager = audioManager;
     res.guardInvariants();
     return res;
   }
 
 }
 classRegistry.AudioBehavior = AudioBehavior;
-const createAudioPlaybackMode = (description) => {
+class AudioManager {
+  mixer;
+  musicPlaybackControl = null;
+  musicVolume = 1;
+  musicPlaybackTasks = Dut.emptyList();
+  musicTrackItems = Dut.emptyList();
+  currentTaskTime = 0;
+  constructor() {
+  }
+
+  getClass() {
+    return "AudioManager";
+  }
+
+  guardInvariants() {
+  }
+
+  move(dt) {
+    if (this.musicPlaybackControl!=null&&this.musicPlaybackControl.isClosed()) {
+      this.musicPlaybackControl = null;
+    }
+    if (this.musicPlaybackControl==null&&!this.musicTrackItems.isEmpty()) {
+      let mti = this.musicTrackItems.get(0);
+      this.musicTrackItems = Dut.immutableListMinusItemAt(this.musicTrackItems, 0);
+      this.musicPlaybackControl = this.mixer.preparePlayback(AudioPlaybackId.random(), mti.getTrackId()).setBusId(AudioBusId.MUSIC).setGain(this.musicVolume*this.musicVolume).setLoop(mti.isLoop()).play();
+    }
+    if (this.musicPlaybackTasks.isEmpty()) {
+      this.currentTaskTime = 0;
+    }
+    else {
+      let task = this.musicPlaybackTasks.get(0);
+      if (task.isFadeInAndPlay()) {
+        if (this.currentTaskTime==0) {
+          if (this.musicPlaybackControl!=null) {
+            this.musicPlaybackControl.stop();
+            this.musicPlaybackControl = null;
+          }
+          this.musicVolume = 0;
+          this.musicPlaybackControl = this.mixer.preparePlayback(AudioPlaybackId.random(), task.getTracks().get(0).getTrackId()).setBusId(AudioBusId.MUSIC).setGain(this.musicVolume*this.musicVolume).setLoop(task.getTracks().get(0).isLoop()).play();
+          this.musicTrackItems = Dut.immutableListMinusItemAt(task.getTracks(), 0);
+        }
+        let volumeVel = 1/task.getDuration();
+        this.musicVolume = FMath.min(1, (this.currentTaskTime+dt)*volumeVel);
+        if (this.musicPlaybackControl!=null) {
+          this.musicPlaybackControl.setGain(this.musicVolume*this.musicVolume);
+        }
+      }
+      else if (task.isFadeOutAndStop()) {
+        if (this.musicPlaybackControl==null&&this.musicPlaybackControl.isClosed()) {
+          this.currentTaskTime = task.getDuration()+1;
+        }
+        else {
+          let volumeVel = 1/task.getDuration();
+          this.musicVolume = FMath.max(0, 1-(this.currentTaskTime+dt)*volumeVel);
+          this.musicPlaybackControl.setGain(this.musicVolume*this.musicVolume);
+        }
+      }
+      else if (task.isWait()) {
+      }
+      else {
+        throw new Error("task type is not implemented, implement me: "+task.getType());
+      }
+      this.currentTaskTime = this.currentTaskTime+dt;
+      if (this.currentTaskTime>=task.getDuration()) {
+        this.currentTaskTime = 0;
+        this.musicPlaybackTasks = Dut.immutableListMinusItemAt(this.musicPlaybackTasks, 0);
+      }
+    }
+  }
+
+  isMusicPlaying() {
+    return this.musicPlaybackControl!=null;
+  }
+
+  addMusicPlaybackTask(task) {
+    this.musicPlaybackTasks = Dut.immutableListPlusItem(this.musicPlaybackTasks, task);
+    return this;
+  }
+
+  playSfx(sfxId) {
+    this.mixer.preparePlayback(AudioPlaybackId.random(), sfxId).setBusId(AudioBusId.SFX).setAbsolute(false).setLoop(false).play();
+    return this;
+  }
+
+  playRandomSfxNonStrict(sfxIds) {
+    if (sfxIds.isEmpty()) {
+      return this;
+    }
+    this.playSfx(Randoms.pickOne(sfxIds));
+    return this;
+  }
+
+  stopAll() {
+    this.mixer.stopAll();
+    this.musicPlaybackControl = null;
+    this.musicPlaybackTasks = Dut.emptyList();
+    this.musicTrackItems = Dut.emptyList();
+    return this;
+  }
+
+  static create(mixer) {
+    let res = new AudioManager();
+    res.mixer = mixer;
+    res.guardInvariants();
+    return res;
+  }
+
+}
+classRegistry.AudioManager = AudioManager;
+class MusicPlaybackTask {
+  type;
+  duration;
+  tracks;
+  constructor() {
+  }
+
+  getClass() {
+    return "MusicPlaybackTask";
+  }
+
+  guardInvariants() {
+  }
+
+  getType() {
+    return this.type;
+  }
+
+  isFadeInAndPlay() {
+    return this.type.equals(MusicPlaybackTaskType.FADE_IN_AND_PLAY);
+  }
+
+  isFadeOutAndStop() {
+    return this.type.equals(MusicPlaybackTaskType.FADE_OUT_AND_STOP);
+  }
+
+  isWait() {
+    return this.type.equals(MusicPlaybackTaskType.WAIT);
+  }
+
+  getDuration() {
+    return this.duration;
+  }
+
+  getTracks() {
+    return this.tracks;
+  }
+
+  hashCode() {
+    return Reflections.hashCode(this);
+  }
+
+  equals(obj) {
+    return Reflections.equals(this, obj);
+  }
+
+  toString() {
+  }
+
+  static create(type, duration, tracks) {
+    let res = new MusicPlaybackTask();
+    res.type = type;
+    res.duration = duration;
+    res.tracks = tracks;
+    res.guardInvariants();
+    return res;
+  }
+
+}
+classRegistry.MusicPlaybackTask = MusicPlaybackTask;
+const createMusicPlaybackTaskType = (description) => {
   const symbol = Symbol(description);
   return {
     symbol: symbol,
@@ -37702,10 +37851,10 @@ const createAudioPlaybackMode = (description) => {
     }
   };
 };
-const AudioPlaybackMode = Object.freeze({
-  FADE_IN: createAudioPlaybackMode("FADE_IN"),
-  PLAY: createAudioPlaybackMode("PLAY"),
-  FADE_OUT: createAudioPlaybackMode("FADE_OUT"),
+const MusicPlaybackTaskType = Object.freeze({
+  FADE_IN_AND_PLAY: createMusicPlaybackTaskType("FADE_IN_AND_PLAY"),
+  FADE_OUT_AND_STOP: createMusicPlaybackTaskType("FADE_OUT_AND_STOP"),
+  WAIT: createMusicPlaybackTaskType("WAIT"),
 
   valueOf(description) {
     if (typeof description !== 'string') {
@@ -37723,6 +37872,60 @@ const AudioPlaybackMode = Object.freeze({
     return Object.values(this).filter(value => typeof value === 'object' && value.symbol);
   }
 });
+class MusicTrackItem {
+  trackId;
+  loop;
+  constructor() {
+  }
+
+  getClass() {
+    return "MusicTrackItem";
+  }
+
+  guardInvariants() {
+  }
+
+  getTrackId() {
+    return this.trackId;
+  }
+
+  isLoop() {
+    return this.loop;
+  }
+
+  hashCode() {
+    return Reflections.hashCode(this);
+  }
+
+  equals(obj) {
+    return Reflections.equals(this, obj);
+  }
+
+  toString() {
+  }
+
+  static create(trackId, loop) {
+    let res = new MusicTrackItem();
+    res.trackId = trackId;
+    res.loop = loop;
+    res.guardInvariants();
+    return res;
+  }
+
+}
+classRegistry.MusicTrackItem = MusicTrackItem;
+class Musics {
+  static MENU_MUSIC_ITEMS = Dut.list(Dut.list(MusicTrackItem.create(AudioTrackId.of("hip-menus-loop-1"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("hip-menus-loop-2"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("hip-menus-loop-3"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("hip-menus-loop-4"), true)));
+  static MENU_MUSIC_FADE_IN_DURATION = 3;
+  constructor() {
+  }
+
+  getClass() {
+    return "Musics";
+  }
+
+}
+classRegistry.Musics = Musics;
 class SfxId {
   mId;
   constructor() {
@@ -38753,7 +38956,7 @@ class CombatScreen extends TyracornScreen {
     Fonts.prepareScaledFonts(assets, Dut.set(10, 12, 14, 16, 18, 20, 22, 24, 26, 30));
     this.world = CombatWorlds.createWorld(drivers);
     this.scenario.getArenaScene().emptyWorld(this.world).loadToWorld(this.world, assets);
-    this.audio = AudioBehavior.create(ComponentKey.random());
+    this.audio = AudioBehavior.create(ComponentKey.random(), this.appManager.getAudioManager());
     this.gameMaster = CombatGameMasterBehavior.create(ComponentKey.of("game-master"), this.scenario);
     this.world.actors().get(GameActors.WORLD).addComponent(this.audio).addComponent(this.gameMaster);
     this.gameMaster.spawnInitialActors();
@@ -41954,7 +42157,6 @@ class FighterVisionSensor extends Behavior {
 }
 classRegistry.FighterVisionSensor = FighterVisionSensor;
 class CombatGameMasterBehavior extends Behavior {
-  static MUSIC_IDS = Dut.list(AudioTrackId.of("alexander-ehlers-flags"), AudioTrackId.of("alexander-ehlers-waking-the-devil"));
   scenario;
   audio;
   state = CombatGameState.PREPARATION;
@@ -41977,14 +42179,12 @@ class CombatGameMasterBehavior extends Behavior {
 
   init() {
     this.audio = this.actor().getComponent("AudioBehavior");
+    this.audio.playStageMusic(1);
   }
 
   move(dt, inputs) {
     this.stateTime = this.stateTime+dt;
     if (this.state.equals(CombatGameState.PREPARATION)) {
-      if (this.stateTime>1&&!this.audio.isMusicPlaying()) {
-        this.audio.fadeInAndPlayMusic(CombatGameMasterBehavior.MUSIC_IDS.get(Randoms.nextInt(0, CombatGameMasterBehavior.MUSIC_IDS.size())), 3);
-      }
       if (this.stateTime>4) {
         this.state = CombatGameState.COMBAT;
         this.stateTime = 0;
@@ -42042,7 +42242,7 @@ class CombatGameMasterBehavior extends Behavior {
     if (deathActor.equals(this.playerActor)) {
       this.stateRemainingTime = 2;
       this.statePlan = CombatGameState.FINISH_PLAYER_LOSE;
-      this.audio.fadeOutAndStopMusic(3);
+      this.audio.fadeOutMusic();
       return this;
     }
     else {
@@ -42053,7 +42253,7 @@ class CombatGameMasterBehavior extends Behavior {
       else {
         this.stateRemainingTime = 2;
         this.statePlan = CombatGameState.FINISH_PLAYER_WIN;
-        this.audio.fadeOutAndStopMusic(3);
+        this.audio.fadeOutMusic();
         return this;
       }
     }
@@ -44495,7 +44695,10 @@ class QuestScreen extends TyracornScreen {
     let assets = drivers.getDriver("AssetManager");
     Fonts.prepareScaledFonts(assets, Dut.set(10, 12, 14, 16, 18, 20, 22, 24, 26, 30));
     this.world = RigidBodyWorld.create(drivers);
-    this.audio = AudioBehavior.create(ComponentKey.random());
+    this.audio = AudioBehavior.create(ComponentKey.random(), this.appManager.getAudioManager());
+    if (!this.audio.isMusicPlaying()) {
+      this.appManager.getAudioManager().addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, Musics.MENU_MUSIC_FADE_IN_DURATION, Randoms.pickOne(Musics.MENU_MUSIC_ITEMS)));
+    }
     let storyManager = this.appManager.getStoryManager();
     let currentQuest = storyManager.getCurrentQuest();
     let currentQuestStatus = storyManager.getCurrentQuestStatus();
