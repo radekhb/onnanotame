@@ -37417,7 +37417,7 @@ class ConfigPropertiesAppSettings {
   }
 
   getSfxVolume() {
-    return this.properties.getFloat(ConfigPropertiesAppSettings.SFx_VOLUME_KEY, 0.8);
+    return this.properties.getFloat(ConfigPropertiesAppSettings.SFx_VOLUME_KEY, 0.5);
   }
 
   setSfxVolume(sfxVolume) {
@@ -37433,7 +37433,7 @@ class ConfigPropertiesAppSettings {
   }
 
   getMusicVolume() {
-    return this.properties.getFloat(ConfigPropertiesAppSettings.MUSIC_VOLUME_KEY, 0.6);
+    return this.properties.getFloat(ConfigPropertiesAppSettings.MUSIC_VOLUME_KEY, 0.4);
   }
 
   setMusicVolume(musicVolume) {
@@ -37603,7 +37603,7 @@ class MenuScreen extends TyracornScreen {
     aboutTab.addComponent(SlotUis.createMenuOverlayPanel(0, 6));
     aboutTab.addComponent(SlotUis.createMenuH1Label(0, "About"));
     aboutTab.addComponent(SlotUis.createMenuNormalLabel(1, "3D Models: Quaternius"));
-    aboutTab.addComponent(SlotUis.createMenuNormalLabel(2, "Music: Alexander Ehlers"));
+    aboutTab.addComponent(SlotUis.createMenuNormalLabel(2, "Sfx & Music: Voltz Supreme"));
     aboutTab.addComponent(SlotUis.createMenuNormalLabel(3, "Developer: Tyracorn"));
     aboutTab.addComponent(SlotUis.createMenuBtn(5, "Back").addOnClickAction((btn) => {
   tabs.setActiveTabIdx(0);
@@ -37944,6 +37944,8 @@ class Musics {
   static MENU_MUSIC_FADE_IN_DURATION = 3;
   static STAGE_MUSIC_FADE_IN_TIME = 1;
   static STAGE_MUSIC_FADE_OUT_TIME = 1;
+  static CELEBRATE_MUSIC_ITEMS = Dut.list(Dut.list(MusicTrackItem.create(AudioTrackId.of("story-bright-lights"), true)));
+  static DEATH_MUSIC_ITEMS = Dut.list(Dut.list(MusicTrackItem.create(AudioTrackId.of("story-rest-in-bruises"), true)));
   static STAGE_MUSIC_ITEMS = Dut.list(Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-downtown-streets-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-downtown-streets-early-rounds-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-jungle-fire-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-jungle-fire-early-rounds-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-king-of-the-rats-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-king-of-the-rats-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-metropolis-grime-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-metropolis-grime-loop"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-runaway-train-loop-1"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-runaway-train-loop-2"), true)), Dut.list(MusicTrackItem.create(AudioTrackId.of("stage-the-drunken-master-intro"), false), MusicTrackItem.create(AudioTrackId.of("stage-the-drunken-master-loop"), true)));
   constructor() {
   }
@@ -39940,8 +39942,6 @@ class FighterBaseBehavior extends Behavior {
   attackHiboxVolumes = new HashMap();
   attackHitboxVolumeInterpolations = Dut.immutableList(0.33, 0.66, 1);
   moveCategoryAccumulator = FighterMoveCategroyAccumulator.create(1);
-  hitVoiceSfxTimeout = 0;
-  blockSfxTimeout = 0;
   constructor(key) {
     super(key);
   }
@@ -44507,6 +44507,7 @@ const QuestNodeType = Object.freeze({
   }
 });
 class QuestPlayerBehavior extends Behavior {
+  audio;
   model;
   animationPlayer;
   controllable = true;
@@ -44523,6 +44524,7 @@ class QuestPlayerBehavior extends Behavior {
   }
 
   init() {
+    this.audio = this.actor().getComponent("AudioBehavior");
     this.model = this.actor().getComponent("ModelComponent");
     let animCol = this.world().assets().get("MeshAnimationCollection", GameActors.FIGHTER_BASE_ANIMATION_COLLECTION_ID);
     this.animationPlayer = MeshAnimationPlayer.create(animCol, GameActors.IDLE_ANIMATION_KEY);
@@ -44548,6 +44550,9 @@ class QuestPlayerBehavior extends Behavior {
       this.animationPlayer.play(GameActors.IDLE_ANIMATION_KEY, MeshAnimationPlayConfig.PLAY);
     }
     else if (this.state.equals(QuestPlayerState.COMMIT)) {
+      if (!this.animationPlayer.getKey().equals(GameActors.YES_ANIMATION_KEY)) {
+        this.audio.playRandomSfxNonStrict(Dut.list(AudioTrackId.of("regular-male-voice-attack-medium-00"), AudioTrackId.of("regular-male-voice-attack-medium-01"), AudioTrackId.of("regular-male-voice-attack-medium-00")));
+      }
       this.animationPlayer.play(GameActors.YES_ANIMATION_KEY, MeshAnimationPlayConfig.PLAY);
     }
     else if (this.state.equals(QuestPlayerState.CELEBRATE)) {
@@ -44556,6 +44561,7 @@ class QuestPlayerBehavior extends Behavior {
     else if (this.state.equals(QuestPlayerState.DEATH)) {
       if (this.animationPlayer.keyNotIn(GameActors.DEATH_ANIMATION_KEYS)) {
         this.animationPlayer.play(Randoms.pickOne(GameActors.DEATH_ANIMATION_KEYS), MeshAnimationPlayConfig.PLAY);
+        this.audio.playRandomSfxNonStrict(Dut.list(AudioTrackId.of("regular-male-voice-hit-ko-00"), AudioTrackId.of("regular-male-voice-hit-ko-01")));
       }
     }
     let step = this.animationPlayer.move(dt);
@@ -44722,14 +44728,20 @@ class QuestScreen extends TyracornScreen {
   init(drivers, screenManager, properties) {
     let assets = drivers.getDriver("AssetManager");
     Fonts.prepareScaledFonts(assets, Dut.set(10, 12, 14, 16, 18, 20, 22, 24, 26, 30));
-    this.world = RigidBodyWorld.create(drivers);
-    this.audio = AudioBehavior.create(ComponentKey.random(), this.appManager.getAudioManager());
-    if (!this.audio.isMusicPlaying()) {
-      this.appManager.getAudioManager().addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, Musics.MENU_MUSIC_FADE_IN_DURATION, Randoms.pickOne(Musics.MENU_MUSIC_ITEMS)));
-    }
     let storyManager = this.appManager.getStoryManager();
     let currentQuest = storyManager.getCurrentQuest();
     let currentQuestStatus = storyManager.getCurrentQuestStatus();
+    this.world = RigidBodyWorld.create(drivers);
+    this.audio = AudioBehavior.create(ComponentKey.random(), this.appManager.getAudioManager());
+    if (currentQuest.getNode(currentQuestStatus.getCurrentNodeIdx()).typeEquals(QuestNodeType.CELEBRATION)) {
+      this.appManager.getAudioManager().addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, Musics.MENU_MUSIC_FADE_IN_DURATION, Randoms.pickOne(Musics.CELEBRATE_MUSIC_ITEMS)));
+    }
+    else if (this.cinematicSequenceType.equals(QuestScreenCinematicSequenceType.FAIL_NODE)) {
+      this.appManager.getAudioManager().addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, Musics.MENU_MUSIC_FADE_IN_DURATION, Randoms.pickOne(Musics.DEATH_MUSIC_ITEMS)));
+    }
+    else if (!this.audio.isMusicPlaying()) {
+      this.appManager.getAudioManager().addMusicPlaybackTask(MusicPlaybackTask.create(MusicPlaybackTaskType.FADE_IN_AND_PLAY, Musics.MENU_MUSIC_FADE_IN_DURATION, Randoms.pickOne(Musics.MENU_MUSIC_ITEMS)));
+    }
     let playerInitialPosOffset = Vec3.ZERO;
     if (this.cinematicSequenceType.equals(QuestScreenCinematicSequenceType.COMPLETE_PREVIOUS_NODE)) {
       playerInitialPosOffset = Vec3.create(-QuestScreen.NODE_DISTANCE, 0, -2);
@@ -44813,7 +44825,7 @@ class QuestScreen extends TyracornScreen {
   spawnPlayer(assets, pos) {
     let prefab = assets.get("ActorPrefab", ActorPrefabId.of("quest-fighter-001-barbar"));
     let req = CreateActorRequest.create(prefab, ActorId.of("player"), pos, Quaternion.ZERO_ROT);
-    return this.world.constructActor(req).addComponent(QuestPlayerBehavior.create(ComponentKey.random())).addComponent(CinematicControllerComponent.create(ComponentKey.random()));
+    return this.world.constructActor(req).addComponent(AudioBehavior.create(ComponentKey.random(), this.appManager.getAudioManager())).addComponent(QuestPlayerBehavior.create(ComponentKey.random())).addComponent(CinematicControllerComponent.create(ComponentKey.random()));
   }
 
   spawnNode(assets, arena, pos) {
@@ -44894,6 +44906,10 @@ class QuestStatus {
 
   getType() {
     return this.type;
+  }
+
+  isCompleted() {
+    return this.type.equals(QuestStatusType.COMPLETED);
   }
 
   withType(type) {
